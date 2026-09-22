@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "alasdairanderson.image-picker",
+  "name": "Retro Image Picker",
+  "version": "1.0.0",
+  "author": "AlasdairAnderson",
+  "description": "Retro-styled image picker overlay with stepped background alignment and slideshow transition controls",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "ImagePicker.qml"
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.image-picker"
+  }
+}
