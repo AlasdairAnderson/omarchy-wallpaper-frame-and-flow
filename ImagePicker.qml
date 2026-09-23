@@ -16,7 +16,19 @@ Item {
   property string imageDirs: Quickshell.env("OMARCHY_IMAGE_SELECTOR_DIRS") || Quickshell.env("OMARCHY_IMAGE_SELECTOR_DIR") || Quickshell.env("OMARCHY_STOCK_BACKGROUNDS_DIR") || (stateHome + "/omarchy/current/theme/backgrounds")
   property string imageRows: ""
   property string loadedImageRows: ""
-  property string selectionFile: Quickshell.env("OMARCHY_IMAGE_SELECTOR_SELECTION_FILE") || Quickshell.env("OMARCHY_BACKGROUND_SELECTION_FILE")
+  function isRuntimePath(p) {
+    if (!p || typeof p !== "string") return false
+    var rt = Quickshell.env("XDG_RUNTIME_DIR")
+    if (!rt) return false
+    if (p.indexOf("..") !== -1) return false
+    return (p === rt || p.indexOf(rt + "/") === 0)
+  }
+
+  function sanitizeRuntimePath(p) {
+    return isRuntimePath(p) ? p : ""
+  }
+
+  property string selectionFile: sanitizeRuntimePath(Quickshell.env("OMARCHY_IMAGE_SELECTOR_SELECTION_FILE") || Quickshell.env("OMARCHY_BACKGROUND_SELECTION_FILE"))
   property string selectedImage: Quickshell.env("OMARCHY_IMAGE_SELECTOR_SELECTED")
   property int selectedIndex: 0
   property bool imagesLoaded: false
@@ -372,12 +384,17 @@ Item {
     if (releaseProc.running || doneFilesToRelease.length === 0) return
 
     var path = doneFilesToRelease.shift()
-    releaseProc.command = ["bash", "-c", ": > " + Util.shellQuote(path)]
+    if (!isRuntimePath(path)) {
+      releaseNextDoneFile()
+      return
+    }
+
+    releaseProc.command = [root.scriptPath("ipc-file.sh"), "touch", path]
     releaseProc.running = true
   }
 
   function finishDoneFile(path) {
-    if (!path) return
+    if (!path || !isRuntimePath(path)) return
     doneFilesToRelease.push(path)
     releaseNextDoneFile()
   }
@@ -406,7 +423,14 @@ Item {
         "tmp=$(mktemp) && jq --arg f " + Util.shellQuote(filename) + " --arg p " + Util.shellQuote(path) + " --arg a " + Util.shellQuote(align) + " '.[$f] = $a | .[$p] = $a' " + Util.shellQuote(cfg) + " > \"$tmp\" && mv \"$tmp\" " + Util.shellQuote(cfg) + "; "
     }
 
-    applyProc.command = ["bash", "-c", saveAlignCmd + "printf '%s\\n' " + Util.shellQuote(path) + " > " + Util.shellQuote(activeSelectionFile) + "; : > " + Util.shellQuote(activeDoneFile)]
+    var ipcScript = root.scriptPath("ipc-file.sh")
+    var cmd = saveAlignCmd +
+      Util.shellQuote(ipcScript) + " write " + Util.shellQuote(activeSelectionFile) + " " + Util.shellQuote(path)
+    if (activeDoneFile) {
+      cmd += " && " + Util.shellQuote(ipcScript) + " touch " + Util.shellQuote(activeDoneFile)
+    }
+
+    applyProc.command = ["bash", "-c", cmd]
     applyProc.running = true
   }
 
@@ -426,8 +450,9 @@ Item {
     if (requestActive)
       finishDoneFile(doneFile)
 
-    if (nextDoneFile && nextDoneFile !== doneFile)
-      finishDoneFile(nextDoneFile)
+    var next = sanitizeRuntimePath(nextDoneFile)
+    if (next && next !== doneFile)
+      finishDoneFile(next)
 
     requestActive = false
     selectionFile = ""
@@ -451,7 +476,10 @@ Item {
   }
 
   function openSelector(nextImageDirs, nextImageRows, nextSelectedImage, nextSelectionFile, nextDoneFile, nextShowLabels, nextFilterable) {
-    if (requestActive && doneFile && doneFile !== nextDoneFile)
+    var validSelectionFile = sanitizeRuntimePath(nextSelectionFile)
+    var validDoneFile = sanitizeRuntimePath(nextDoneFile)
+
+    if (requestActive && doneFile && doneFile !== validDoneFile)
       finishDoneFile(doneFile)
 
     requestSerial += 1
@@ -459,8 +487,8 @@ Item {
     imageDirs = nextImageDirs
     imageRows = nextImageRows
     selectedImage = nextSelectedImage
-    selectionFile = nextSelectionFile
-    doneFile = nextDoneFile
+    selectionFile = validSelectionFile
+    doneFile = validDoneFile
     requestActive = !!doneFile
     showLabels = nextShowLabels === true || nextShowLabels === "true"
     filterable = nextFilterable === true || nextFilterable === "true"
@@ -555,8 +583,8 @@ Item {
     var dirs = String(args.imageDirs || imageDirs)
     var rows = String(args.imageRows || "")
     var sel = String(args.selectedImage || selectedImage)
-    var selFile = String(args.selectionFile || "")
-    var doneF = String(args.doneFile || "")
+    var selFile = sanitizeRuntimePath(String(args.selectionFile || ""))
+    var doneF = sanitizeRuntimePath(String(args.doneFile || ""))
     var labels = args.showLabels === true || args.showLabels === "true"
     var filter = args.filterable === true || args.filterable === "true"
     var align = (args.alignable !== undefined) ? (args.alignable === true || args.alignable === "true") : true
