@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "alasdairanderson.image-picker",
-  "name": "Retro Image Picker",
+  "id": "alasdairanderson.wallpaper-frame-and-flow",
+  "name": "Wallpaper Frame And Flow",
   "version": "1.0.0",
   "author": "AlasdairAnderson",
   "description": "Retro-styled image picker overlay with stepped background alignment and slideshow transition controls",

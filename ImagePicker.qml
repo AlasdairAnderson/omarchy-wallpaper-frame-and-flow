@@ -279,7 +279,10 @@ Item {
   }
 
   function scriptPath(name) {
-    return omarchyPath + "/shell/plugins/image-picker/" + name
+    var url = String(Qt.resolvedUrl(name) || "")
+    if (url.indexOf("file://") === 0)
+      return decodeURIComponent(url.substring(7))
+    return (omarchyPath || "") + "/shell/plugins/image-picker/" + name
   }
 
   function focusPicker() {

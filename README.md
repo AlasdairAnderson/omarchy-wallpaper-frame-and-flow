@@ -1,4 +1,4 @@
-# Retro Image Picker for Omarchy
+# Wallpaper Frame And Flow for Omarchy
 
 An enhanced, retro-styled wallpaper and image picker overlay for [Omarchy](https://omarchy.org/) with interactive stepped horizontal alignment controls, background slideshow timer configuration, and persistent settings.
 
@@ -45,13 +45,13 @@ An enhanced, retro-styled wallpaper and image picker overlay for [Omarchy](https
 Install and enable the plugin with a single Omarchy command:
 
 ```bash
-omarchy plugin add https://github.com/AlasdairAnderson/omarchy-image-picker.git --enable
+omarchy plugin add https://github.com/AlasdairAnderson/omarchy-wallpaper-frame-and-flow.git --enable
 ```
 
 To update in the future:
 
 ```bash
-omarchy plugin update alasdairanderson.image-picker
+omarchy plugin update alasdairanderson.wallpaper-frame-and-flow
 ```
 
 ## Controls & Shortcuts
