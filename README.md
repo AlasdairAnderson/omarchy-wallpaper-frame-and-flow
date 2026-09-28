@@ -14,7 +14,7 @@ An enhanced, retro-styled wallpaper and image picker overlay for [Omarchy](https
   - `⇥ Right (100%)`
 - **Background Slideshow Timer**: Configure timed rotation intervals directly within the picker:
   - `✕ Off (Disabled)`
-  - `⏱ 1m (Test)`
+  - `⏱ 10s (Test)`
   - `⏱ 5m (Fast)`
   - `⏱ 15m (Default)`
   - `⏱ 30m (Steady)`

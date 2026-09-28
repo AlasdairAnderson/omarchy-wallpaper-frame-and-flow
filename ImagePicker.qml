@@ -74,7 +74,7 @@ Item {
 
   readonly property var intervalSteps: [
     { val: "off", seconds: 0, label: "Off", sub: "Disabled", icon: "󰅖" },
-    { val: "1m", seconds: 60, label: "1m", sub: "Test", icon: "󱎫" },
+    { val: "10s", seconds: 10, label: "10s", sub: "Test", icon: "󱎫" },
     { val: "5m", seconds: 300, label: "5m", sub: "Fast", icon: "󱎫" },
     { val: "15m", seconds: 900, label: "15m", sub: "Default", icon: "󱎫" },
     { val: "30m", seconds: 1800, label: "30m", sub: "Steady", icon: "󱎫" },
