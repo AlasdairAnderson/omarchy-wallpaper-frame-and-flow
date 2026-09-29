@@ -2,7 +2,7 @@
 
 An enhanced, retro-styled wallpaper and image picker overlay for [Omarchy](https://omarchy.org/) with interactive stepped horizontal alignment controls, background slideshow timer configuration, and persistent settings.
 
-![Alignment Drawer Preview](https://raw.githubusercontent.com/AlasdairAnderson/omarchy/screenshots/background-alignment/background-alignment-preview.png)
+![Alignment Drawer Preview](preview.png)
 
 ## Features
 
@@ -81,6 +81,7 @@ omarchy plugin remove alasdairanderson.wallpaper-frame-and-flow
 | <kbd>Left</kbd> / <kbd>Right</kbd> | Navigate wallpapers in the carousel |
 | <kbd>A</kbd> | Toggle the `[A] Align` drawer |
 | <kbd>T</kbd> | Toggle the `[T] Transition` drawer |
+| <kbd>Tab</kbd> | Switch between `[A] Align` and `[T] Transition` tabs in drawer |
 | <kbd>Up</kbd> / <kbd>Down</kbd> | Step through options in the active drawer |
 | <kbd>Enter</kbd> | Apply the selected wallpaper and active alignment |
 | <kbd>Escape</kbd> | Close the active drawer or dismiss the picker |

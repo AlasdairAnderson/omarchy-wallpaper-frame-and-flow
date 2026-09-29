@@ -98,6 +98,13 @@ Item {
 
   Process {
     id: saveSlideshowProc
+    property bool pendingSave: false
+    onExited: {
+      if (pendingSave) {
+        pendingSave = false
+        root.saveSlideshowConfig()
+      }
+    }
   }
 
   property bool alignable: true
@@ -265,12 +272,17 @@ Item {
   }
 
   function saveSlideshowConfig() {
-    var enabledStr = slideshowEnabled ? "true" : "false"
-    var cmd = "mkdir -p " + Util.shellQuote(root.configDir) + "; " +
-      "printf '{\\n  \"enabled\": %s,\\n  \"interval\": %d\\n}\\n' " + enabledStr + " " + root.slideshowInterval + " > " + Util.shellQuote(root.slideshowPath)
     if (saveSlideshowProc.running) {
-      saveSlideshowProc.running = false
+      saveSlideshowProc.pendingSave = true
+      return
     }
+    var enabledStr = slideshowEnabled ? "true" : "false"
+    var cfgDir = Util.shellQuote(root.configDir)
+    var target = Util.shellQuote(root.slideshowPath)
+    var cmd = "mkdir -p " + cfgDir + " && " +
+      "tmp=$(mktemp -p " + cfgDir + " .slideshow.XXXXXX) && chmod 0600 \"$tmp\" && " +
+      "printf '{\\n  \"enabled\": %s,\\n  \"interval\": %d\\n}\\n' " + enabledStr + " " + root.slideshowInterval + " > \"$tmp\" && " +
+      "mv -T -f \"$tmp\" " + target
     saveSlideshowProc.command = ["bash", "-c", cmd]
     saveSlideshowProc.running = true
   }
@@ -413,24 +425,18 @@ Item {
     selectionFile = ""
     doneFile = ""
 
-    var saveAlignCmd = ""
-    if (root.showAlignment) {
-      var filename = path.split("/").pop()
-      var align = root.currentAlignmentValue || "center"
-      var cfg = root.alignmentsPath
-      saveAlignCmd = "mkdir -p " + Util.shellQuote(root.configDir) + "; " +
-        "[[ -f " + Util.shellQuote(cfg) + " ]] || echo '{}' > " + Util.shellQuote(cfg) + "; " +
-        "tmp=$(mktemp) && jq --arg f " + Util.shellQuote(filename) + " --arg p " + Util.shellQuote(path) + " --arg a " + Util.shellQuote(align) + " '.[$f] = $a | .[$p] = $a' " + Util.shellQuote(cfg) + " > \"$tmp\" && mv \"$tmp\" " + Util.shellQuote(cfg) + "; "
-    }
+    var align = root.showAlignment ? (root.currentAlignmentValue || "center") : ""
+    var cfg = root.showAlignment ? root.alignmentsPath : ""
 
-    var ipcScript = root.scriptPath("ipc-file.sh")
-    var cmd = saveAlignCmd +
-      Util.shellQuote(ipcScript) + " write " + Util.shellQuote(activeSelectionFile) + " " + Util.shellQuote(path)
-    if (activeDoneFile) {
-      cmd += " && " + Util.shellQuote(ipcScript) + " touch " + Util.shellQuote(activeDoneFile)
-    }
-
-    applyProc.command = ["bash", "-c", cmd]
+    applyProc.environment = { "SELECTED_WALLPAPER_PATH": path }
+    applyProc.command = [
+      root.scriptPath("ipc-file.sh"),
+      "apply",
+      activeSelectionFile,
+      activeDoneFile || "",
+      cfg,
+      align
+    ]
     applyProc.running = true
   }
 
@@ -683,6 +689,8 @@ Item {
             if (event.key === Qt.Key_Escape) {
               if (root.filterText) {
                 root.updateFilter("")
+              } else if (root.alignMenuExpanded) {
+                root.alignMenuExpanded = false
               } else {
                 root.cancel()
               }
@@ -1123,6 +1131,7 @@ Item {
             y: 0
             width: Math.max(0, alignmentBar.topWidth - (alignTab.tabWidth + transitionTab.tabWidth))
             height: alignmentBar.tabHeight
+            clip: true
             z: 10
 
             Shape {
@@ -1460,8 +1469,8 @@ Item {
                 anchors.bottomMargin: 8
                 x: Math.round(alignmentBar.originX + (alignmentBar.topWidth - width) / 2 - alignmentBar.tabSkew - alignmentBar.drawerSkew)
                 text: root.activeMenuTab === "align"
-                  ? "Use ↑ / ↓ to step position • Enter to apply"
-                  : "Use ↑ / ↓ to change interval • Enter to apply"
+                  ? "Use ↑ / ↓ to step position • Tab to switch • Esc to close • Enter to apply"
+                  : "Use ↑ / ↓ to change interval • Tab to switch • Esc to close • Enter to apply"
                 color: root.foreground
                 opacity: 0.75
                 font.pixelSize: 11

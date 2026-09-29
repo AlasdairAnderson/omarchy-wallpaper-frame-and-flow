@@ -3,9 +3,10 @@
 image_dirs=${1:-}
 cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/image-selector
 index_file="$cache_dir/index.tsv"
-pending_video_file=$(mktemp)
-
 mkdir -p "$cache_dir"
+chmod 0700 "$cache_dir" 2>/dev/null || true
+pending_video_file=$(mktemp -p "$cache_dir" .pending.XXXXXX 2>/dev/null || mktemp)
+
 trap 'rm -f "$pending_video_file"' EXIT
 
 is_video_path() {
@@ -98,9 +99,12 @@ mapfile -d '' -t images < <(
   done <<<"$image_dirs" | sort -z
 )
 
+declare -A video_thumbnails
+
 for image in "${images[@]}"; do
   if is_video_path "$image"; then
     thumbnail=$(thumbnail_path_for "$image") || continue
+    video_thumbnails["$image"]="$thumbnail"
     [[ -f $thumbnail || -f $thumbnail.failed ]] || printf '%s\0%s\0' "$image" "$thumbnail" >>"$pending_video_file"
   fi
 done
@@ -108,7 +112,13 @@ done
 drain_pending_video_thumbnails
 
 for image in "${images[@]}"; do
-  thumbnail=$(thumbnail_for "$image")
-  [[ -n $thumbnail ]] || continue
-  printf '%s\t%s\n' "$image" "$thumbnail"
+  if is_video_path "$image"; then
+    thumbnail="${video_thumbnails["$image"]:-}"
+    [[ -n $thumbnail && -f $thumbnail ]] || continue
+    printf '%s\t%s\n' "$image" "$thumbnail"
+  else
+    thumbnail=$(thumbnail_for "$image")
+    [[ -n $thumbnail ]] || continue
+    printf '%s\t%s\n' "$image" "$thumbnail"
+  fi
 done
