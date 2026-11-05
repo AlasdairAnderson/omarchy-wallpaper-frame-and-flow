@@ -6,7 +6,7 @@ A retro wallpaper picker with five horizontal framing positions and an automatic
 
 ## How it fits into Omarchy
 
-Frame And Flow replaces **`omarchy.background`**, the desktop background service. Its own overlay opens under `alasdairanderson.wallpaper-frame-and-flow`. It does not replace `omarchy.image-picker`, so Omarchy's theme picker and wallpaper menus continue to work independently.
+Frame And Flow replaces **`omarchy.background`**, the desktop background service. Its own overlay opens under `alasdairanderson.wallpaper-frame-and-flow`. It retains `omarchy.image-picker` for Omarchy's native theme picker.
 
 - Double-click the desktop with the **left** button to open Frame And Flow.
 - Double-click with the **right** button to open Omarchy's native theme picker.
@@ -16,7 +16,20 @@ Frame And Flow replaces **`omarchy.background`**, the desktop background service
   omarchy-shell shell summon alasdairanderson.wallpaper-frame-and-flow
   ```
 
-Omarchy's existing background shortcut/menu still opens its native picker. Wallpapers chosen there use this plugin's saved alignment when displayed. Use the command above for the alignment and slideshow controls.
+**Unified access needs an upstream Omarchy extension.** Stock Omarchy 4.5 has no supported plugin-owned menu routing lifecycle. Its existing background shortcuts/menu retain native behavior; they do not open Frame And Flow. Use left desktop double-click or the command above for the visible **Align** and **Transition** controls.
+
+The project includes a [tested upstream proposal](upstream/README.md) to route all current-theme background requests through the enabled plugin:
+
+| Access | With proposed upstream support | Stock Omarchy 4.5 |
+|---|---|---|
+| Super + Ctrl + Space | Frame And Flow | Native background action |
+| Super + Ctrl + W | Frame And Flow | Native background action |
+| Appearance → Background | Frame And Flow | Native background action |
+| Menu aliases `background` and `wallpaper` | Frame And Flow | Native background action |
+| Left desktop double-click | Frame And Flow | Frame And Flow |
+| Theme shortcuts and right desktop double-click | Native theme picker | Native theme picker |
+
+The manifest opts into the proposed `omarchy.backgroundPicker` API; stock 4.5 ignores that field. The upstream patch is a review artifact and is not installed or applied by this plugin. Once Omarchy ships the API, disabling/removing Frame And Flow restores native background routing using the existing clone lifecycle. Explicit user menu actions and shortcut overrides retain priority. No user menu or keybinding files are rewritten.
 
 The plugin preserves Omarchy 4.5's background IPC, theme transitions, monitor handling, image recovery, and OWE video handoff. Video playback is handled by Omarchy; horizontal alignment applies to still images. The slideshow controls remain available when a video is selected.
 
@@ -54,6 +67,36 @@ omarchy plugin enable omarchy.background
 omarchy plugin enable alasdairanderson.wallpaper-frame-and-flow
 ```
 
+## Optional hotkeys on stock Omarchy 4.5
+
+You can manually assign **Super + Ctrl + Space** and **Super + Ctrl + W** to Frame And Flow without the proposed upstream extension. This is an optional user configuration change; the plugin does not install or manage these overrides. It changes only the two shortcuts, leaving the Background menu and theme selection as they are.
+
+Install and enable the plugin first, then inspect your current shortcuts:
+
+```bash
+omarchy menu keybindings --print
+```
+
+Both shortcuts normally open Omarchy's native background switcher. Back up `~/.config/hypr/bindings.lua`, and add the following lines to that file. If it already contains overrides for these keys, save those original lines and replace only the matching overrides. Keep all other bindings.
+
+```lua
+o.rebind("SUPER + CTRL + SPACE", "Frame And Flow", "omarchy-shell shell summon alasdairanderson.wallpaper-frame-and-flow")
+o.rebind("SUPER + CTRL + W", "Frame And Flow", "omarchy-shell shell summon alasdairanderson.wallpaper-frame-and-flow")
+```
+
+`o.rebind` replaces the existing binding for each key, preventing duplicate actions. Save the file, then reload and check for errors:
+
+```bash
+hyprctl reload
+hyprctl configerrors
+```
+
+Press each shortcut to check that Frame And Flow opens with **Align** and **Transition** visible. Close it with Escape between checks. The theme shortcuts, **Super + Ctrl + T** and **Super + Ctrl + Shift + Space**, continue to open the native theme picker.
+
+**Before disabling or removing the plugin**, remove these two lines and restore any previous user overrides you replaced. If there were no previous user overrides, removing the lines restores Omarchy's default background shortcuts when you reload. Run `hyprctl reload` and `hyprctl configerrors` again. Keep any unrelated edits made since the backup; do not overwrite the entire bindings file to undo this setup.
+
+Manual bindings remain after plugin disable/removal and cannot open a disabled or missing plugin. Automatic routing and restoration for all entry points still require the proposed upstream API.
+
 ## Upgrade from 1.0
 
 Version 1.0 replaced the shared image picker. Disable it **before updating**, while Omarchy can still read the old manifest and restore that source. Once the 1.1 changes are available from the remote repository:
@@ -77,6 +120,12 @@ omarchy restart shell
 ```
 
 The restart reloads the plugin's keep-loaded service code.
+
+## Unified-access migration
+
+There is no safe plugin-only migration for stock 4.5. Update Omarchy to a release containing the proposed background-picker API before expecting the unified shortcuts/menu behavior, then update Frame And Flow and restart the shell as above. The first supported Omarchy release is not yet known.
+
+Stock menus/bindings need no edits. If you previously added manual overrides, review only those Background actions and shortcut lines, including legacy `style.background` aliases, and remove them only if they belong to that old integration. Keep unrelated extensions, comments and keybindings. Do not replace entire configuration files or patch the installed Omarchy package. See the [proposal and validation status](upstream/README.md) for details.
 
 ## Disable or remove
 
@@ -104,7 +153,7 @@ Slideshow interval changes save immediately. Wallpaper and alignment changes app
 ## Development checks
 
 ```bash
-node --test --test-isolation=none tests/compatibility.test.cjs
+node --test --test-isolation=none tests/compatibility.test.cjs tests/omarchy-routing.test.cjs
 bash -n ipc-file.sh list.sh tests/qml-smoke.sh
 omarchy plugin validate .
 # Requires access to a running Wayland session; uses isolated state in /tmp.
@@ -112,6 +161,8 @@ bash tests/qml-smoke.sh
 ```
 
 The smoke test compiles and instantiates the picker closed and renderer suspended; it does not install the plugin or change desktop settings. The regression tests exercise theme routing, direct application, safe file-based IPC, crop geometry, configuration limits, and real slideshow rotation through temporary fixtures.
+
+The Omarchy routing tests require installed 4.5 sources (`OMARCHY_PATH`, default `/usr/share/omarchy`); they skip when unavailable. They test the actual registry and CLI lifecycle in an isolated HOME, preserve unrelated user-file fixtures, and apply the proposed upstream patch only to temporary source copies. Passing these tests does not certify unified access on the unmodified installed shell; the remaining graphical checks are listed in the proposal.
 
 ## License
 

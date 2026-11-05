@@ -15,6 +15,7 @@
     "service": "Background.qml"
   },
   "omarchy": {
-    "clonedFrom": "omarchy.background"
+    "clonedFrom": "omarchy.background",
+    "backgroundPicker": true
   }
 }
