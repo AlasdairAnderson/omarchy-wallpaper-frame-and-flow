@@ -997,6 +997,7 @@ Item {
             z: isOpen ? 12 : (hovered ? 11 : 10)
 
             Shape {
+              objectName: "alignmentTabBorder"
               anchors.fill: parent
               antialiasing: true
               preferredRendererType: Shape.CurveRenderer
@@ -1087,6 +1088,7 @@ Item {
             z: isOpen ? 12 : (hovered ? 11 : 10)
 
             Shape {
+              objectName: "transitionTabBorder"
               anchors.fill: parent
               antialiasing: true
               preferredRendererType: Shape.CurveRenderer
@@ -1170,10 +1172,10 @@ Item {
             y: 0
             width: Math.max(0, alignmentBar.topWidth - (alignTab.tabWidth + transitionTab.tabWidth))
             height: alignmentBar.tabHeight
-            clip: true
             z: 10
 
             Shape {
+              objectName: "settingsStatusBorder"
               anchors.fill: parent
               antialiasing: true
               preferredRendererType: Shape.CurveRenderer
@@ -1192,6 +1194,8 @@ Item {
 
             // Wallpaper name and settings callouts
             Row {
+              // Clip overflowing text without cutting the shelf's centered border stroke.
+              clip: true
               anchors.verticalCenter: parent.verticalCenter
               anchors.left: parent.left
               anchors.leftMargin: 16

@@ -42,6 +42,43 @@ ShellRoot {
   Item { id: scene; visible: false }
   property bool passed: true
   property var instances: []
+  function findItem(item, name, visited) {
+    if (!item || typeof item !== "object" || visited.indexOf(item) !== -1) return null
+    visited.push(item)
+    if (item.objectName === name) return item
+    var children = item.data || item.children || []
+    for (var i = 0; i < children.length; i++) {
+      var found = findItem(children[i], name, visited)
+      if (found) return found
+    }
+    return findItem(item.contentItem, name, visited)
+  }
+  function checkMenuBorders(picker) {
+    var expectedWidth = null
+    for (var name of ["alignmentTabBorder", "transitionTabBorder", "settingsStatusBorder"]) {
+      var border = findItem(picker, name, [])
+      if (!border || !border.data.length || !(border.data[0].strokeWidth > 0)) {
+        console.error("SMOKE FAIL: missing menu border: " + name)
+        passed = false
+        continue
+      }
+      var width = border.data[0].strokeWidth
+      if (expectedWidth === null) expectedWidth = width
+      if (width !== expectedWidth) {
+        console.error("SMOKE FAIL: inconsistent menu border width: " + name)
+        passed = false
+      }
+      // Shape strokes straddle their paths, which lie on the item edges.
+      // Clipping here or on a parent removes the outer half of the stroke.
+      for (var item = border; item; item = item.parent) {
+        if (item.clip) {
+          console.error("SMOKE FAIL: clipped menu border: " + name)
+          passed = false
+        }
+        if (item === picker) break
+      }
+    }
+  }
   Component.onCompleted: {
     for (var file of ["ImagePicker.qml", "Background.qml", "AlignedImage.qml"]) {
       var component = Qt.createComponent("file://" + Quickshell.env("FRAME_FLOW_ROOT") + "/" + file, Component.PreferSynchronous)
@@ -62,6 +99,7 @@ ShellRoot {
         passed = false
       } else {
         instances.push(instance)
+        if (file === "ImagePicker.qml") checkMenuBorders(instance)
         if (file === "AlignedImage.qml" && instance.geometry.x !== -1440) {
           console.error("SMOKE FAIL: wrong alignment geometry")
           passed = false

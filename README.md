@@ -160,7 +160,7 @@ omarchy plugin validate .
 bash tests/qml-smoke.sh
 ```
 
-The smoke test compiles and instantiates the picker closed and renderer suspended; it does not install the plugin or change desktop settings. The regression tests exercise theme routing, direct application, safe file-based IPC, crop geometry, configuration limits, and real slideshow rotation through temporary fixtures.
+The smoke test compiles and instantiates the picker closed and renderer suspended; it does not install the plugin or change desktop settings. It also checks that the Align, Transition, and settings status borders have matching stroke widths and no clipping ancestors that would cut off their strokes. The regression tests exercise theme routing, direct application, safe file-based IPC, crop geometry, configuration limits, and real slideshow rotation through temporary fixtures.
 
 The Omarchy routing tests require installed 4.5 sources (`OMARCHY_PATH`, default `/usr/share/omarchy`); they skip when unavailable. They test the actual registry and CLI lifecycle in an isolated HOME, preserve unrelated user-file fixtures, and apply the proposed upstream patch only to temporary source copies. Passing these tests does not certify unified access on the unmodified installed shell; the remaining graphical checks are listed in the proposal.
 
