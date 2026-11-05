@@ -1,0 +1,63 @@
+--- a/shell/services/PluginRegistry.qml
++++ b/shell/services/PluginRegistry.qml
+@@ -130,6 +130,20 @@
+       return ""
+     }
+     return Util.fileUrl(resolved)
++  }
++
++  // A background clone can opt its own overlay into background selection.
++  // Resolve on every request: disable/remove needs no persistent menu edits.
++  function backgroundPickerId() {
++    var id = resolveEnabledId("omarchy.background")
++    var manifest = installedPlugins[id]
++    if (!manifest || !isEnabled(id)) return ""
++    var metadata = Util.isPlainObject(manifest.omarchy) ? manifest.omarchy : {}
++    if (metadata.clonedFrom !== "omarchy.background" || metadata.backgroundPicker !== true)
++      return ""
++    if (!Array.isArray(manifest.kinds) || manifest.kinds.indexOf("overlay") === -1)
++      return ""
++    return manifest.entryPoints && isSafeEntryPoint(manifest.entryPoints.overlay) ? id : ""
+   }
+ 
+   // Enabled = the plugin id is referenced somewhere in shell.json. That can
+--- a/shell/shell.qml
++++ b/shell/shell.qml
+@@ -1178,6 +1178,15 @@
+     return true
+   }
+ 
++  // Background selection is independent of the shared image/theme picker.
++  // Keep the native selection/apply round-trip when no provider is enabled.
++  function selectBackground() {
++    var id = shell.pluginRegistry.backgroundPickerId()
++    if (id && shell.summon(id, "{}")) return "ok"
++    Util.execArgv(["bash", "-c", 'background=$(omarchy-theme-bg-switcher); [[ -n $background ]] && omarchy-theme-bg-set "$background"'])
++    return "ok"
++  }
++
+   function summon(pluginId, payloadJson) {
+     var id = shell.pluginRegistry.resolveEnabledId(pluginId)
+     if (!id) return false
+@@ -1749,6 +1758,10 @@
+   ShellIpc {
+     target: "shell"
+ 
++    function selectBackground(): string {
++      return shell.selectBackground()
++    }
++
+     function prepareThemeIntro(fromPath: string, token: string, colorsB64: string, shellB64: string): void {
+       shell.bootIntro.prepareTheme(fromPath, token, colorsB64, shellB64)
+     }
+--- a/default/omarchy/omarchy-menu.jsonc
++++ b/default/omarchy/omarchy-menu.jsonc
+@@ -54,7 +54,7 @@
+ 
+   // Appearance
+   "appearance.theme": {"icon":"󰸌","label":"Theme","aliases":["theme","themes"],"action":"omarchy-shell shell summon omarchy.image-picker '{\"source\":\"themes\"}'"},
+-  "appearance.background": {"icon":"","label":"Background","aliases":["background","wallpaper"],"action":"background=$(omarchy-theme-bg-switcher); [[ -n $background ]] && omarchy-theme-bg-set \"$background\""},
++  "appearance.background": {"icon":"","label":"Background","aliases":["background","wallpaper"],"action":"omarchy-shell shell selectBackground"},
+   "appearance.font": {"icon":"","label":"Font","provider":"fonts"},
+   "appearance.top-bar": {"icon":"󰍜","label":"Menu Bar"},
+   "appearance.top-bar.hide": {"icon":"󰈉","label":"Hide Bar","when":"! omarchy-toggle-enabled bar-off","action":"omarchy-toggle-bar"},
