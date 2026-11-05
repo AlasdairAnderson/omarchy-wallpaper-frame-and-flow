@@ -5,7 +5,9 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
 import qs.Commons
+import qs.Commons as Commons
 import "ImagePickerModel.js" as ImagePickerModel
+import "FrameFlowModel.js" as FrameFlowModel
 
 Item {
   id: root
@@ -14,6 +16,9 @@ Item {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property string stateHome: Quickshell.env("HOME") + "/.local/state"
   property string imageDirs: Quickshell.env("OMARCHY_IMAGE_SELECTOR_DIRS") || Quickshell.env("OMARCHY_IMAGE_SELECTOR_DIR") || Quickshell.env("OMARCHY_STOCK_BACKGROUNDS_DIR") || (stateHome + "/omarchy/current/theme/backgrounds")
+  property var shell: null
+  property string errorText: ""
+  property bool externalRequest: false
   property string imageRows: ""
   property string loadedImageRows: ""
   function isRuntimePath(p) {
@@ -21,7 +26,7 @@ Item {
     var rt = Quickshell.env("XDG_RUNTIME_DIR")
     if (!rt) return false
     if (p.indexOf("..") !== -1) return false
-    return (p === rt || p.indexOf(rt + "/") === 0)
+    return p.indexOf(rt + "/") === 0 || p.indexOf("/tmp/") === 0 || p.indexOf("/var/tmp/") === 0
   }
 
   function sanitizeRuntimePath(p) {
@@ -42,14 +47,14 @@ Item {
   property string doneFile: ""
   property string filterText: ""
   property var doneFilesToRelease: []
-  // Bound to the central [image-picker] section in shell.toml via Color.qml.
+  // Bound to the central [image-picker] section in shell.toml via Commons.Color.qml.
   // `dimColor` tints unselected slices and text outlines on top of the scrim;
   // it intentionally tracks the foundational background, not a surface role.
-  property color dimColor: Color.background
-  property color foreground: Color.imagePicker.text
-  property color scrim: Color.imagePicker.scrim
-  property color selectedBorder: Color.imagePicker.selectedBorder
-  property color unselectedBorder: Color.imagePicker.unselectedBorder
+  property color dimColor: Commons.Color.background
+  property color foreground: Commons.Color.imagePicker.text
+  property color scrim: Util.alpha(Commons.Color.background, 0.65)
+  property color selectedBorder: Commons.Color.imagePicker.selectedBorder
+  property color unselectedBorder: Commons.Color.imagePicker.unselectedBorder
   property int expandedWidth: 768
   property int expandedHeight: 475
   property int sliceWidth: 108
@@ -111,9 +116,12 @@ Item {
   property bool alignMenuExpanded: false
   readonly property bool isCurrentVideo: (imageArray.length > 0 && selectedIndex >= 0 && selectedIndex < imageArray.length)
     ? root.isVideo(imageArray[selectedIndex].filePath) : false
-  readonly property bool showAlignment: alignable && !showLabels && !filterable && imagesLoaded && imageArray.length > 0 && !isCurrentVideo
+  readonly property bool showControls: alignable && !showLabels && !filterable && imagesLoaded && imageArray.length > 0
+  readonly property bool showAlignment: showControls && !isCurrentVideo
+  onIsCurrentVideoChanged: if (isCurrentVideo) activeMenuTab = "transition"
+  onImageArrayChanged: updateCurrentAlignment()
   property int alignmentMenuHeight: 112
-  property int bottomChromeHeight: (showLabels ? (filterable ? 104 : 74) : (filterable ? 60 : 30)) + (showAlignment ? alignmentMenuHeight : 0)
+  property int bottomChromeHeight: (showLabels ? (filterable ? 104 : 74) : (filterable ? 60 : 30)) + (showControls ? alignmentMenuHeight : 0)
 
   FileView {
     id: alignmentsFile
@@ -126,15 +134,7 @@ Item {
   }
 
   function parsePositionRatio(val) {
-    if (val === undefined || val === null || val === "") return 0.5
-    var s = String(val).toLowerCase().trim()
-    if (s === "left") return 0.0
-    if (s === "center") return 0.5
-    if (s === "right") return 1.0
-    var num = parseFloat(s)
-    if (isNaN(num)) return 0.5
-    if (s.indexOf("%") !== -1 || num > 1.0) num = num / 100.0
-    return Math.max(0.0, Math.min(1.0, num))
+    return FrameFlowModel.positionRatio(val)
   }
 
   function closestStepIndex(ratio) {
@@ -232,23 +232,10 @@ Item {
   }
 
   function loadSlideshowConfig() {
-    var raw = slideshowFile.text() || ""
-    if (!raw.trim()) {
-      slideshowEnabled = false
-      currentIntervalIndex = 0
-      return
-    }
-    try {
-      var parsed = JSON.parse(raw)
-      slideshowEnabled = !!(parsed && parsed.enabled)
-      if (parsed && typeof parsed.interval === "number" && parsed.interval > 0) {
-        slideshowInterval = Math.max(10, parsed.interval)
-      }
-      currentIntervalIndex = closestIntervalIndex(slideshowEnabled, slideshowInterval)
-    } catch (e) {
-      slideshowEnabled = false
-      currentIntervalIndex = 0
-    }
+    var config = FrameFlowModel.slideshowConfig(slideshowFile.text())
+    slideshowEnabled = config.enabled
+    slideshowInterval = config.interval
+    currentIntervalIndex = closestIntervalIndex(slideshowEnabled, slideshowInterval)
   }
 
   function setIntervalIndex(idx) {
@@ -337,6 +324,7 @@ Item {
   }
 
   function currentLabel() {
+    if (errorText) return errorText
     var path = currentPath()
     if (!path) return filterText ? "No matches" : ""
 
@@ -412,35 +400,41 @@ Item {
   }
 
   function applySelected() {
+    if (applyProc.running) return
     var path = currentPath()
-    if (!path || !selectionFile) {
-      cancel()
+    if (!path) return
+    if (externalRequest && !selectionFile) {
+      errorText = "Cannot apply: unsupported selection file location"
       return
     }
 
-    var activeSelectionFile = selectionFile
-    var activeDoneFile = doneFile
+    errorText = ""
     applySerial = requestSerial
-    requestActive = false
-    selectionFile = ""
-    doneFile = ""
-
     var align = root.showAlignment ? (root.currentAlignmentValue || "center") : ""
     var cfg = root.showAlignment ? root.alignmentsPath : ""
-
     applyProc.environment = { "SELECTED_WALLPAPER_PATH": path }
-    applyProc.command = [
-      root.scriptPath("ipc-file.sh"),
-      "apply",
-      activeSelectionFile,
-      activeDoneFile || "",
-      cfg,
-      align
-    ]
+    // A standalone picker sets the wallpaper itself. Legacy file-based callers
+    // still receive a selection and completion signal through the IPC helper.
+    applyProc.command = selectionFile
+      ? [root.scriptPath("ipc-file.sh"), "apply", selectionFile, doneFile || "", cfg, align]
+      : [root.scriptPath("ipc-file.sh"), "set", cfg, align]
     applyProc.running = true
   }
 
+  function finishApply(exitCode) {
+    if (applySerial !== requestSerial) return
+    if (exitCode !== 0) {
+      errorText = "Could not apply wallpaper. Press Enter to retry."
+      return
+    }
+    requestActive = false
+    selectionFile = ""
+    doneFile = ""
+    opened = false
+  }
+
   function cancel() {
+    defaultPickerProc.serial = -1
     if (requestActive)
       finishDoneFile(doneFile)
 
@@ -489,6 +483,7 @@ Item {
       finishDoneFile(doneFile)
 
     requestSerial += 1
+    errorText = ""
 
     imageDirs = nextImageDirs
     imageRows = nextImageRows
@@ -577,14 +572,23 @@ Item {
     }
   }
 
-  // Lifecycle hooks invoked by omarchy-shell summon/hide. shell.summon(id,
-  // payloadJson) hands the JSON to open() here; shell.hide(id) calls close().
-  // The shell host owns the stable `image-selector` IPC target and forwards
-  // those lower-level positional calls here.
+  // This overlay owns only its own id. It never replaces omarchy.image-picker.
   function open(payload) {
     var args = {}
     if (payload) {
       try { args = JSON.parse(payload) || {} } catch (e) { args = {} }
+    }
+    if (args.source === "themes") {
+      cancel()
+      Util.execArgv(["omarchy-shell", "shell", "summon", "omarchy.image-picker", JSON.stringify({ source: "themes" })])
+      return
+    }
+    externalRequest = !!(args.selectionFile || args.doneFile)
+    if (!args.imageDirs && !args.imageRows && !externalRequest) {
+      cancel()
+      defaultPickerProc.serial = ++requestSerial
+      defaultPickerProc.running = true
+      return
     }
     var dirs = String(args.imageDirs || imageDirs)
     var rows = String(args.imageRows || "")
@@ -593,9 +597,33 @@ Item {
     var doneF = sanitizeRuntimePath(String(args.doneFile || ""))
     var labels = args.showLabels === true || args.showLabels === "true"
     var filter = args.filterable === true || args.filterable === "true"
-    var align = (args.alignable !== undefined) ? (args.alignable === true || args.alignable === "true") : true
-    alignable = align
+    alignable = args.alignable !== false && args.alignable !== "false"
     openSelector(dirs, rows, sel, selFile, doneF, labels, filter)
+  }
+
+  Process {
+    id: defaultPickerProc
+    property int serial: -1
+    command: ["python3", root.scriptPath("backgrounds.py")]
+    stdout: StdioCollector { id: pickerStateOut }
+    onExited: function(exitCode) {
+      if (serial !== root.requestSerial) return
+      if (exitCode !== 0) {
+        root.errorText = "Could not read wallpaper directories. Click to close."
+        root.imageArray = []
+        root.imagesLoaded = true
+        root.opened = true
+        return
+      }
+      try {
+        var state = JSON.parse(pickerStateOut.text)
+        root.alignable = true
+        root.externalRequest = false
+        root.openSelector(state.imageDirs, "", state.selectedImage, "", "", false, false)
+      } catch (e) {
+        console.warn("Frame And Flow: invalid picker context", e)
+      }
+    }
   }
 
   function close() {
@@ -627,10 +655,7 @@ Item {
 
   Process {
     id: applyProc
-    onExited: {
-      if (root.applySerial === root.requestSerial)
-        root.opened = false
-    }
+    onExited: function(exitCode) { root.finishApply(exitCode) }
   }
 
   Process {
@@ -659,6 +684,18 @@ Item {
       anchors.fill: parent
       enabled: root.opened && root.imagesLoaded
       onClicked: root.cancel()
+    }
+
+    Text {
+      anchors.centerIn: parent
+      width: parent.width - 80
+      textFormat: Text.PlainText
+      text: root.errorText || "No wallpapers found. Click anywhere to close."
+      visible: root.opened && root.imagesLoaded && (root.imageArray.length === 0 || root.errorText !== "")
+      color: root.foreground
+      font.pixelSize: Style.font.body
+      horizontalAlignment: Text.AlignHCenter
+      z: 300
     }
 
     Item {
@@ -701,8 +738,8 @@ Item {
             } else if (root.filterable && Util.editsFilter(event, root.filterText)) {
               root.updateFilter(Util.editedFilter(event, root.filterText))
               event.accepted = true
-            } else if (root.showAlignment && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) && root.alignMenuExpanded) {
-              root.activeMenuTab = (root.activeMenuTab === "align" ? "transition" : "align")
+            } else if (root.showControls && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) && root.alignMenuExpanded) {
+              root.activeMenuTab = root.showAlignment && root.activeMenuTab === "transition" ? "align" : "transition"
               event.accepted = true
             } else if (event.key === Qt.Key_Left || (event.key === Qt.Key_Tab && event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab) {
               root.selectAdjacent(-1)
@@ -723,7 +760,7 @@ Item {
                 event.accepted = true
               }
             } else if (event.key === Qt.Key_T) {
-              if (root.showAlignment) {
+              if (root.showControls) {
                 if (!root.alignMenuExpanded) {
                   root.activeMenuTab = "transition"
                   root.alignMenuExpanded = true
@@ -734,7 +771,7 @@ Item {
                 }
                 event.accepted = true
               }
-            } else if (root.showAlignment && event.key === Qt.Key_Up) {
+            } else if (root.showControls && event.key === Qt.Key_Up) {
               if (!root.alignMenuExpanded) {
                 root.alignMenuExpanded = true
               } else if (root.activeMenuTab === "align") {
@@ -743,7 +780,7 @@ Item {
                 root.cycleInterval(-1)
               }
               event.accepted = true
-            } else if (root.showAlignment && event.key === Qt.Key_Down) {
+            } else if (root.showControls && event.key === Qt.Key_Down) {
               if (!root.alignMenuExpanded) {
                 root.alignMenuExpanded = true
               } else if (root.activeMenuTab === "align") {
@@ -930,7 +967,7 @@ Item {
 
         Item {
           id: alignmentBar
-          visible: root.showAlignment
+          visible: root.showControls
           anchors.top: carousel.top
           anchors.topMargin: root.expandedHeight
           x: Math.round(carousel.x + carousel.previewX - alignmentBar.originX)
@@ -951,6 +988,7 @@ Item {
           // Tab header docked at the bottom of the preview card, flush with the left edge
           Item {
             id: alignTab
+            opacity: root.showAlignment ? 1 : 0.45
             width: alignTab.tabWidth + alignmentBar.originX
             height: alignmentBar.tabHeight
             readonly property real tabWidth: 132
@@ -1016,6 +1054,7 @@ Item {
 
             MouseArea {
               id: alignTabMouse
+              enabled: root.showAlignment
               x: alignmentBar.originX - alignmentBar.tabSkew
               y: 0
               width: alignTab.tabWidth + alignmentBar.tabSkew
@@ -1209,7 +1248,7 @@ Item {
 
                 Text {
                   textFormat: Text.PlainText
-                  text: (root.currentStepIndex >= 0 && root.currentStepIndex < root.alignmentSteps.length) ? root.alignmentSteps[root.currentStepIndex].label : "Center"
+                  text: root.isCurrentVideo ? "Video" : (root.currentStepIndex >= 0 && root.currentStepIndex < root.alignmentSteps.length) ? root.alignmentSteps[root.currentStepIndex].label : "Center"
                   color: root.selectedBorder
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
@@ -1266,7 +1305,7 @@ Item {
             z: 5
 
             Behavior on height {
-              NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+              NumberAnimation { duration: Style.duration(220); easing.type: Easing.OutCubic }
             }
 
             Item {

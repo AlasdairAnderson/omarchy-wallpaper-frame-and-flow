@@ -2,17 +2,19 @@
   "schemaVersion": 1,
   "id": "alasdairanderson.wallpaper-frame-and-flow",
   "name": "Wallpaper Frame And Flow",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "AlasdairAnderson",
   "description": "Retro-styled image picker overlay with stepped background alignment and slideshow transition controls",
   "kinds": [
-    "overlay"
+    "overlay",
+    "service"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "overlay": "ImagePicker.qml"
+    "overlay": "ImagePicker.qml",
+    "service": "Background.qml"
   },
   "omarchy": {
-    "clonedFrom": "omarchy.image-picker"
+    "clonedFrom": "omarchy.background"
   }
 }
