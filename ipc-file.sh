@@ -4,8 +4,8 @@ set -euo pipefail
 # ipc-file.sh: Securely manage IPC exchange files (selectionFile and doneFile).
 #
 # Security invariants enforced:
-# 1. Target must reside in a verified runtime directory ($XDG_RUNTIME_DIR or /run/user/<uid>)
-#    that is owned exclusively by the current user and restricted to mode 0700.
+# 1. Targets must be in the private runtime directory or a verified temporary
+#    directory. Omarchy creates selection/done files with mktemp in /tmp.
 # 2. Target must not be a symbolic link (symlink traversal rejected).
 # 3. If target exists, it must be a regular file owned by the current user.
 # 4. File creation and updates use atomic, no-follow operations (O_NOFOLLOW / atomic rename)
@@ -17,8 +17,8 @@ action="${1:-}"
 file="${2:-}"
 content="${3:-}"
 
-if [[ -z "$action" || -z "$file" ]]; then
-  echo "Usage: $0 {touch|write|apply} <path> [args...]" >&2
+if [[ -z "$action" || ( "$action" != "set" && -z "$file" ) ]]; then
+  echo "Usage: $0 {touch|write|apply|set} <path> [args...]" >&2
   exit 1
 fi
 
@@ -50,15 +50,24 @@ validate_target() {
     exit 1
   }
 
-  if [[ "$real_parent" != "$real_runtime" && "$real_parent" != "$real_runtime"/* ]]; then
-    echo "ipc-file: target path is outside verified runtime directory: $target" >&2
+  # Resolve the parent first, then restrict writes to private user directories
+  # or the root-owned, sticky system temp directories used by mktemp.
+  local in_runtime=0 in_temp=0 parent_uid parent_mode
+  [[ "$real_parent" == "$real_runtime" || "$real_parent" == "$real_runtime"/* ]] && in_runtime=1
+  [[ "$real_parent" == /tmp || "$real_parent" == /tmp/* || "$real_parent" == /var/tmp || "$real_parent" == /var/tmp/* ]] && in_temp=1
+  if (( !in_runtime && !in_temp )); then
+    echo "ipc-file: target path is outside runtime or temporary directories: $target" >&2
     exit 1
   fi
-
-  # Parent directory must be owned by user and mode 0700
-  parent_stat=$(stat -Lc '%u:%a' "$real_parent" 2>/dev/null) || exit 1
-  if [[ "$parent_stat" != "${uid}:700" ]]; then
-    echo "ipc-file: parent directory must be owned by user and mode 0700 (got $parent_stat)" >&2
+  parent_uid=$(stat -Lc '%u' "$real_parent") || exit 1
+  parent_mode=$(stat -Lc '%a' "$real_parent") || exit 1
+  if [[ "$parent_uid:$parent_mode" == "$uid:700" ]]; then
+    : # Private user directory, including mktemp -d directories.
+  elif (( in_temp )) && [[ "$real_parent" == /tmp || "$real_parent" == /var/tmp ]] \
+       && [[ "$parent_uid" == 0 ]] && (( (8#$parent_mode & 8#1000) != 0 )); then
+    : # Sticky shared temp directory; atomic rename never follows its target.
+  else
+    echo "ipc-file: unsafe IPC parent directory: $real_parent" >&2
     exit 1
   fi
 
@@ -187,6 +196,17 @@ case "$action" in
       payload=$(cat)
     fi
     atomic_write "$file" "$payload"
+    ;;
+  set)
+    # Standalone picker: persist alignment and use Omarchy's public wallpaper
+    # command so symlinks, live rendering, and video integration stay in sync.
+    wallpaper_path="${SELECTED_WALLPAPER_PATH:-}"
+    [[ -n "$wallpaper_path" && -f "$wallpaper_path" ]] || {
+      echo "ipc-file: set requires an existing wallpaper path" >&2
+      exit 1
+    }
+    save_alignment "$file" "${3:-}" "$wallpaper_path"
+    omarchy-theme-bg-set "$wallpaper_path"
     ;;
   apply)
     selection_file="$file"
